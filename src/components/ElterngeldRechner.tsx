@@ -17,6 +17,16 @@ const fmt = (n: number) =>
 
 const pct = (n: number) => `${Math.round(n * 100)} %`;
 
+const toggleBtnClass = (active: boolean, extra = "px-3") =>
+  `flex-1 py-2 ${extra} rounded-xl text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
+    active
+      ? "bg-sage text-white"
+      : "bg-white border border-sage-mid text-ink-mid hover:border-sage"
+  }`;
+
+const numberInputClass =
+  "w-full py-2.5 pl-4 pr-16 border-2 border-sage-mid rounded-xl text-base font-medium text-ink bg-white focus:outline-none focus:border-sage transition-colors appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+
 type ToggleProps = {
   options: { label: string; value: string }[];
   value: string;
@@ -30,11 +40,7 @@ function Toggle({ options, value, onChange }: ToggleProps) {
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
-          className={`flex-1 py-2 px-3 rounded-xl text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
-            value === o.value
-              ? "bg-sage text-white"
-              : "bg-white border border-sage-mid text-ink-mid hover:border-sage"
-          }`}
+          className={toggleBtnClass(value === o.value)}
         >
           {o.label}
         </button>
@@ -78,7 +84,7 @@ function NumberInput({ value, onChange, unit, min, max, placeholder }: NumberInp
         min={min}
         max={max}
         placeholder={placeholder}
-        className="w-full py-2.5 pl-4 pr-16 border-2 border-sage-mid rounded-xl text-base font-medium text-ink bg-white focus:outline-none focus:border-sage transition-colors appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+        className={numberInputClass}
       />
       {unit && (
         <span className="absolute right-4 text-sm text-ink-light pointer-events-none">
@@ -189,12 +195,7 @@ export default function ElterngeldRechner() {
                     { label: "Gesamt", val: fmt(ergebnis.gesamtBetrag) },
                     { label: "Dauer", val: `${ergebnis.bezugsdauer} Mo.` },
                     { label: "Ersatz", val: pct(ergebnis.ersatzrate) },
-                    {
-                      label: partnerschaftsbonus ? "Bonus" : "Bonus",
-                      val: partnerschaftsbonus
-                        ? `+${ergebnis.bonusMonate} Mo.`
-                        : "–",
-                    },
+                    { label: "Bonus", val: partnerschaftsbonus ? `+${ergebnis.bonusMonate} Mo.` : "–" },
                   ].map((item) => (
                     <div key={item.label} className="bg-white/10 rounded-xl p-2">
                       <p className="text-[10px] text-white/55 mb-0.5">{item.label}</p>
@@ -279,11 +280,7 @@ export default function ElterngeldRechner() {
                       <button
                         key={sk}
                         onClick={() => setSteuerklasse(sk as 1|2|3|4|5|6)}
-                        className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
-                          steuerklasse === sk
-                            ? "bg-sage text-white"
-                            : "bg-white border border-sage-mid text-ink-mid hover:border-sage"
-                        }`}
+                        className={toggleBtnClass(steuerklasse === sk, "")}
                       >
                         {sk}
                       </button>
