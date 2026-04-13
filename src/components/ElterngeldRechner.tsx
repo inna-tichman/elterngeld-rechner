@@ -102,6 +102,9 @@ export default function ElterngeldRechner() {
   const [mehrlinge, setMehrlinge] = useState(0);
   const [steuerklasse, setSteuerklasse] = useState<1|2|3|4|5|6>(1);
   const [showDetails, setShowDetails] = useState(false);
+  const [showEinkommen, setShowEinkommen] = useState(true);
+  const [showModell, setShowModell] = useState(true);
+  const [showExtras, setShowExtras] = useState(true);
 
   const params: EingabenParams = {
     nettoMonatlich: netto,
@@ -137,144 +140,180 @@ export default function ElterngeldRechner() {
         </div>
 
         {/* Einkommen */}
-        <div className="bg-white rounded-2xl p-6 mb-3 border border-sage/10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-sage mb-4">
-            Dein Einkommen
-          </p>
-
-          <Field
-            label="Durchschn. Nettoeinkommen"
-            hint="Monatlicher Durchschnitt der letzten 12 Monate vor Geburt"
+        <div className="bg-white rounded-2xl border border-sage/10 mb-3 overflow-hidden">
+          <button
+            onClick={() => setShowEinkommen(!showEinkommen)}
+            className="w-full flex justify-between items-center p-5 text-left"
           >
-            <NumberInput
-              value={netto}
-              onChange={setNetto}
-              unit="€ / Mo."
-              placeholder="3.200"
-              min={0}
-              max={20000}
-            />
-          </Field>
+            <span className="text-xs font-semibold uppercase tracking-widest text-sage">
+              Dein Einkommen
+            </span>
+            <span className="text-sage text-lg">{showEinkommen ? "−" : "+"}</span>
+          </button>
 
-          <Field label="Steuerklasse">
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5, 6].map((sk) => (
-                <button
-                  key={sk}
-                  onClick={() => setSteuerklasse(sk as 1|2|3|4|5|6)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
-                    steuerklasse === sk
-                      ? "bg-sage text-white"
-                      : "bg-white border border-sage-mid text-ink-mid hover:border-sage"
-                  }`}
+          {showEinkommen && (
+            <div className="px-5 pb-5 border-t border-sage/10">
+              <div className="mt-4">
+                <Field
+                  label="Durchschn. Nettoeinkommen"
+                  hint="Monatlicher Durchschnitt der letzten 12 Monate vor Geburt"
                 >
-                  {sk}
-                </button>
-              ))}
-            </div>
-          </Field>
+                  <NumberInput
+                    value={netto}
+                    onChange={setNetto}
+                    unit="€ / Mo."
+                    placeholder="3.200"
+                    min={0}
+                    max={20000}
+                  />
+                </Field>
 
-          <Field label="Beschäftigungsart">
-            <Toggle
-              options={[
-                { label: "Angestellt", value: "angestellt" },
-                { label: "Selbstständig", value: "selbst" },
-                { label: "Beamte/r", value: "beamte" },
-              ]}
-              value={beschaeftigung}
-              onChange={(v) => setBeschaeftigung(v as Beschaeftigung)}
-            />
-          </Field>
+                <Field label="Steuerklasse">
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5, 6].map((sk) => (
+                      <button
+                        key={sk}
+                        onClick={() => setSteuerklasse(sk as 1|2|3|4|5|6)}
+                        className={`flex-1 py-2 rounded-xl text-sm font-medium transition-all ${
+                          steuerklasse === sk
+                            ? "bg-sage text-white"
+                            : "bg-white border border-sage-mid text-ink-mid hover:border-sage"
+                        }`}
+                      >
+                        {sk}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
+
+                <Field label="Beschäftigungsart">
+                  <Toggle
+                    options={[
+                      { label: "Angestellt", value: "angestellt" },
+                      { label: "Selbstständig", value: "selbst" },
+                      { label: "Beamte/r", value: "beamte" },
+                    ]}
+                    value={beschaeftigung}
+                    onChange={(v) => setBeschaeftigung(v as Beschaeftigung)}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Modell */}
-        <div className="bg-white rounded-2xl p-6 mb-3 border border-sage/10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-sage mb-4">
-            Elterngeld-Modell
-          </p>
-
-          <Field label="Welches Modell?">
-            <Toggle
-              options={[
-                { label: "Basis", value: "basis" },
-                { label: "Plus", value: "plus" },
-                { label: "Mix", value: "mix" },
-              ]}
-              value={modell}
-              onChange={(v) => setModell(v as Modell)}
-            />
-          </Field>
-
-          {modell === "basis" && (
-            <Field label="Monate Basiselterngeld" hint="Max. 14 Monate (bei 2 Elternteilen)">
-              <NumberInput value={monateBasis} onChange={setMonateBasis} unit="Monate" min={1} max={14} />
-            </Field>
-          )}
-
-          {modell === "plus" && (
-            <Field label="Monate ElterngeldPlus" hint="Max. 28 Monate — halb so viel, doppelt so lang">
-              <NumberInput value={monatePlus} onChange={setMonatePlus} unit="Monate" min={1} max={28} />
-            </Field>
-          )}
-
-          {modell === "mix" && (
-            <>
-              <Field label="Basis-Monate">
-                <NumberInput value={mixBasis} onChange={setMixBasis} unit="Monate" min={1} max={14} />
-              </Field>
-              <Field label="ElterngeldPlus-Monate">
-                <NumberInput value={mixPlus} onChange={setMixPlus} unit="Monate" min={1} max={28} />
-              </Field>
-            </>
-          )}
-
-          <Field
-            label="Partnerschaftsbonus?"
-            hint="+4 Bonus-Monate wenn beide 25–32 Std./Woche arbeiten"
+        <div className="bg-white rounded-2xl border border-sage/10 mb-3 overflow-hidden">
+          <button
+            onClick={() => setShowModell(!showModell)}
+            className="w-full flex justify-between items-center p-5 text-left"
           >
-            <Toggle
-              options={[
-                { label: "Ja", value: "ja" },
-                { label: "Nein", value: "nein" },
-              ]}
-              value={partnerschaftsbonus ? "ja" : "nein"}
-              onChange={(v) => setPartnerschaftsbonus(v === "ja")}
-            />
-          </Field>
+            <span className="text-xs font-semibold uppercase tracking-widest text-sage">
+              Elterngeld-Modell
+            </span>
+            <span className="text-sage text-lg">{showModell ? "−" : "+"}</span>
+          </button>
+
+          {showModell && (
+            <div className="px-5 pb-5 border-t border-sage/10">
+              <div className="mt-4">
+                <Field label="Welches Modell?">
+                  <Toggle
+                    options={[
+                      { label: "Basis", value: "basis" },
+                      { label: "Plus", value: "plus" },
+                      { label: "Mix", value: "mix" },
+                    ]}
+                    value={modell}
+                    onChange={(v) => setModell(v as Modell)}
+                  />
+                </Field>
+
+                {modell === "basis" && (
+                  <Field label="Monate Basiselterngeld" hint="Max. 14 Monate (bei 2 Elternteilen)">
+                    <NumberInput value={monateBasis} onChange={setMonateBasis} unit="Monate" min={1} max={14} />
+                  </Field>
+                )}
+
+                {modell === "plus" && (
+                  <Field label="Monate ElterngeldPlus" hint="Max. 28 Monate — halb so viel, doppelt so lang">
+                    <NumberInput value={monatePlus} onChange={setMonatePlus} unit="Monate" min={1} max={28} />
+                  </Field>
+                )}
+
+                {modell === "mix" && (
+                  <>
+                    <Field label="Basis-Monate">
+                      <NumberInput value={mixBasis} onChange={setMixBasis} unit="Monate" min={1} max={14} />
+                    </Field>
+                    <Field label="ElterngeldPlus-Monate">
+                      <NumberInput value={mixPlus} onChange={setMixPlus} unit="Monate" min={1} max={28} />
+                    </Field>
+                  </>
+                )}
+
+                <Field
+                  label="Partnerschaftsbonus?"
+                  hint="+4 Bonus-Monate wenn beide 25–32 Std./Woche arbeiten"
+                >
+                  <Toggle
+                    options={[
+                      { label: "Ja", value: "ja" },
+                      { label: "Nein", value: "nein" },
+                    ]}
+                    value={partnerschaftsbonus ? "ja" : "nein"}
+                    onChange={(v) => setPartnerschaftsbonus(v === "ja")}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Extras */}
-        <div className="bg-white rounded-2xl p-6 mb-4 border border-sage/10">
-          <p className="text-xs font-semibold uppercase tracking-widest text-sage mb-4">
-            Besondere Umstände
-          </p>
-
-          <Field
-            label="Geschwisterbonus?"
-            hint="Weiteres Kind unter 3 Jahren im Haushalt → +10% Elterngeld"
+        <div className="bg-white rounded-2xl border border-sage/10 mb-4 overflow-hidden">
+          <button
+            onClick={() => setShowExtras(!showExtras)}
+            className="w-full flex justify-between items-center p-5 text-left"
           >
-            <Toggle
-              options={[
-                { label: "Ja", value: "ja" },
-                { label: "Nein", value: "nein" },
-              ]}
-              value={geschwisterbonus ? "ja" : "nein"}
-              onChange={(v) => setGeschwisterbonus(v === "ja")}
-            />
-          </Field>
+            <span className="text-xs font-semibold uppercase tracking-widest text-sage">
+              Besondere Umstände
+            </span>
+            <span className="text-sage text-lg">{showExtras ? "−" : "+"}</span>
+          </button>
 
-          <Field label="Mehrlinge?" hint="Anzahl zusätzlicher Kinder bei Mehrlingsgeburt">
-            <Toggle
-              options={[
-                { label: "Kein", value: "0" },
-                { label: "+1", value: "1" },
-                { label: "+2", value: "2" },
-                { label: "+3", value: "3" },
-              ]}
-              value={String(mehrlinge)}
-              onChange={(v) => setMehrlinge(parseInt(v))}
-            />
-          </Field>
+          {showExtras && (
+            <div className="px-5 pb-5 border-t border-sage/10">
+              <div className="mt-4">
+                <Field
+                  label="Geschwisterbonus?"
+                  hint="Weiteres Kind unter 3 Jahren im Haushalt → +10% Elterngeld"
+                >
+                  <Toggle
+                    options={[
+                      { label: "Ja", value: "ja" },
+                      { label: "Nein", value: "nein" },
+                    ]}
+                    value={geschwisterbonus ? "ja" : "nein"}
+                    onChange={(v) => setGeschwisterbonus(v === "ja")}
+                  />
+                </Field>
+
+                <Field label="Mehrlinge?" hint="Anzahl zusätzlicher Kinder bei Mehrlingsgeburt">
+                  <Toggle
+                    options={[
+                      { label: "Kein", value: "0" },
+                      { label: "+1", value: "1" },
+                      { label: "+2", value: "2" },
+                      { label: "+3", value: "3" },
+                    ]}
+                    value={String(mehrlinge)}
+                    onChange={(v) => setMehrlinge(parseInt(v))}
+                  />
+                </Field>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Ergebnis */}
