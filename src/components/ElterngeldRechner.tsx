@@ -129,11 +129,10 @@ export default function ElterngeldRechner() {
         {/* Header */}
         <div className="text-center mb-8">
           <h1 className="font-serif text-4xl text-ink leading-tight mb-2">
-            Dein <em className="italic text-sage not-italic">Elterngeld</em>
-            <br />in Sekunden
+            <em className="italic text-sage not-italic">Elterngeld Rechner</em>
           </h1>
           <p className="text-sm text-ink-light font-light">
-            Kostenlose Berechnung · Kein Account nötig
+            Kostenlos · Schnell · Ohne Anmeldung
           </p>
         </div>
 
