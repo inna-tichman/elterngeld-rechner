@@ -90,7 +90,7 @@ export function berechnePlanStatistik(plan: PlanState): PlanStatistik {
     plusMonateB: plusB,
     gesamtMonateA: basisA + plusA,
     gesamtMonateB: basisB + plusB,
-    partnerschaftsbonusBloeкeA: pbBloeckeA,
+    partnerschaftsbonusBloeckeA: pbBloeckeA,
     partnerschaftsbonusBloeckeB: pbBloeckeB,
     bonusMonateGesamt,
   };
@@ -98,7 +98,7 @@ export function berechnePlanStatistik(plan: PlanState): PlanStatistik {
 
 // ─── Validierung ──────────────────────────────────────────────────────────────
 
-export function validiereplan(
+export function validierePlan(
   plan: PlanState,
 ): PlanValidierungsProblem[] {
   const probleme: PlanValidierungsProblem[] = [];
@@ -221,7 +221,7 @@ export interface PlanBetragsSchaetzung {
   gesamt: number;
 }
 
-export function schaeztePlanBetrag(
+export function schaetzePlanBetrag(
   plan: PlanState,
   basisProMonat: number,
   plusProMonat: number,

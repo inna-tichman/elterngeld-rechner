@@ -17,8 +17,8 @@ import {
 } from "@/lib/steuer/lohnsteuer";
 import {
   berechnePlanStatistik,
-  validiereplan,
-  schaeztePlanBetrag,
+  validierePlan,
+  schaetzePlanBetrag,
   type PlanBetragsSchaetzung,
 } from "@/lib/planer/validation";
 import type {
@@ -309,10 +309,10 @@ export default function ElterngeldRechner() {
   ]);
 
   const planStatistik = useMemo(() => berechnePlanStatistik(planState), [planState]);
-  const planProbleme = useMemo(() => validiereplan(planState), [planState]);
+  const planProbleme = useMemo(() => validierePlan(planState), [planState]);
   const planBetrag = useMemo(() => {
     if (!ergebnis) return null;
-    return schaeztePlanBetrag(planState, ergebnis.basisProMonat, ergebnis.plusProMonat);
+    return schaetzePlanBetrag(planState, ergebnis.basisProMonat, ergebnis.plusProMonat);
   }, [planState, ergebnis]);
 
   const handleBeschaeftigungChange = (v: string) => {

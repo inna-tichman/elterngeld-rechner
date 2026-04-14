@@ -40,7 +40,7 @@ export interface PlanStatistik {
   gesamtMonateA: number;
   gesamtMonateB: number;
   /** Partnerschaftsbonus-Blöcke (je 4 Monate consecutive) */
-  partnerschaftsbonusBloeкeA: number;
+  partnerschaftsbonusBloeckeA: number;
   partnerschaftsbonusBloeckeB: number;
   /** Bonus-Monate aus Partnerschaftsbonus gesamt */
   bonusMonateGesamt: number;
