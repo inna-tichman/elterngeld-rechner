@@ -9,9 +9,23 @@
 export type Modell = "basis" | "plus" | "mix";
 export type Beschaeftigung = "angestellt" | "selbst" | "beamte";
 
+/**
+ * Quelle des Nettoeinkommens:
+ *  - "direkt"         → Nutzer gibt Netto direkt ein (bisheriger Modus)
+ *  - "brutto"         → Netto wird aus Brutto per Steuerrechner berechnet
+ *  - "selbststaendig" → Netto wird aus Jahresgewinn/-einkünften abgeleitet
+ */
+export type NettoQuelle = "direkt" | "brutto" | "selbststaendig";
+
 export interface EingabenParams {
   nettoMonatlich: number;       // Durchschn. Netto der letzten 12 Monate
   beschaeftigung: Beschaeftigung;
+  /**
+   * Quelle des nettoMonatlich-Werts (optional, Standard: "direkt").
+   * Wird von der UI befüllt, hat aber keinen Einfluss auf die Kernberechnung,
+   * da alle Pfade zum gleichen nettoMonatlich führen.
+   */
+  nettoQuelle?: NettoQuelle;
   modell: Modell;
   monateBasis: number;          // 1–14
   monatePlus: number;           // 1–28
@@ -41,17 +55,6 @@ export interface ErgebnisDetails {
   bonusMonate: number;
 }
 
-// Steuerklassen-Pauschalen für bereinigtes Nettoeinkommen
-// Vereinfachte Näherung — exakt wäre Lohnsteuerrechner nötig
-const STEUERKLASSEN_FAKTOR: Record<number, number> = {
-  1: 1.0,
-  2: 1.02,
-  3: 1.10,  // Verheiratete Alleinverdiener, höheres Netto
-  4: 1.0,
-  5: 0.88,  // Höhere Steuerbelastung
-  6: 0.82,
-};
-
 /**
  * Kernberechnung Ersatzrate nach §2 Abs. 2 BEEG
  * - Unter 1.000 € Netto: 67%–100% (Geringverdiener-Bonus)
@@ -71,14 +74,12 @@ function berechneErsatzrate(netto: number): number {
 }
 
 export function berechneElterngeld(p: EingabenParams): ErgebnisDetails {
-  // 1. Steuerklassen-Anpassung (Näherung)
-  const faktor = STEUERKLASSEN_FAKTOR[p.steuerklasse] ?? 1.0;
-  const nettoAngepasst = p.nettoMonatlich * faktor;
+  // 1. Kappung auf Berechnungsgrenze 2.770 €
+  // Das übergebene nettoMonatlich stammt entweder aus direkter Eingabe,
+  // aus dem Lohnsteuerrechner (Brutto→Netto) oder der Selbstständigen-Ableitung.
+  const nettoKapped = Math.min(p.nettoMonatlich, 2770);
 
-  // 2. Kappung auf Berechnungsgrenze 2.770 €
-  const nettoKapped = Math.min(nettoAngepasst, 2770);
-
-  // 3. Ersatzrate & Basis-Elterngeld
+  // 2. Ersatzrate & Basis-Elterngeld
   const ersatzrate = berechneErsatzrate(nettoKapped);
   let basisRoh = nettoKapped * ersatzrate;
 
