@@ -33,6 +33,10 @@ const MONATE_DE = [
   "Nov.",
   "Dez.",
 ];
+const MAX_BASIS_MONATE = 14;
+const MAX_PLUS_MONATE = 28;
+const MAX_BASIS_MONATE_A = 12;
+const MAX_PLUS_MONATE_A = 24;
 
 const parseMonthValue = (value: string): Date => {
   const [y, m] = value.split("-").map(Number);
@@ -90,21 +94,41 @@ export function erstelleAutoPlan(input: AutoPlanInput): PlanState {
 
   if (input.modell === "basis") {
     let monat = 1;
-    monat = addSequenziell(monat, Math.min(Math.max(input.monateBasis, 0), 14), "basis", 12);
+    monat = addSequenziell(
+      monat,
+      Math.min(Math.max(input.monateBasis, 0), MAX_BASIS_MONATE),
+      "basis",
+      MAX_BASIS_MONATE_A,
+    );
     addBonus(monat, bonus);
     return plan;
   }
 
   if (input.modell === "plus") {
     let monat = 1;
-    monat = addSequenziell(monat, Math.min(Math.max(input.monatePlus, 0), 28), "plus", 24);
+    monat = addSequenziell(
+      monat,
+      Math.min(Math.max(input.monatePlus, 0), MAX_PLUS_MONATE),
+      "plus",
+      MAX_PLUS_MONATE_A,
+    );
     addBonus(monat, bonus);
     return plan;
   }
 
   let monat = 1;
-  monat = addSequenziell(monat, Math.min(Math.max(input.mixBasis, 0), 14), "basis", 12);
-  monat = addSequenziell(monat, Math.min(Math.max(input.mixPlus, 0), 28), "plus", 24);
+  monat = addSequenziell(
+    monat,
+    Math.min(Math.max(input.mixBasis, 0), MAX_BASIS_MONATE),
+    "basis",
+    MAX_BASIS_MONATE_A,
+  );
+  monat = addSequenziell(
+    monat,
+    Math.min(Math.max(input.mixPlus, 0), MAX_PLUS_MONATE),
+    "plus",
+    MAX_PLUS_MONATE_A,
+  );
   addBonus(monat, bonus);
   return plan;
 }
@@ -124,22 +148,22 @@ export function baueAuszahlungsMonate(
       const eintragB = plan.get(lebensmonat)?.elternteilB ?? null;
       const date = new Date(start.getFullYear(), start.getMonth() + lebensmonat - 1, 1);
       const label = `${MONATE_DE[date.getMonth()]} ${date.getFullYear()}`;
-      return ([
+      const auszahlungen: AuszahlungsMonat[] = [];
+      for (const item of [
         { parent: "A", eintrag: eintragA },
         { parent: "B", eintrag: eintragB },
-      ] as const)
-        .filter((item) => !!item.eintrag)
-        .map((item) => {
-          const typ = item.eintrag!.typ;
-          return {
-            lebensmonat,
-            label,
-            betrag: typ === "basis" ? basisBetrag : plusBetrag,
-            typ,
-            parent: item.parent,
-            bonus: !!item.eintrag?.bonus,
-          };
+      ]) {
+        if (!item.eintrag) continue;
+        const typ = item.eintrag.typ;
+        auszahlungen.push({
+          lebensmonat,
+          label,
+          betrag: typ === "basis" ? basisBetrag : plusBetrag,
+          typ,
+          parent: item.parent,
+          bonus: item.eintrag.bonus ?? false,
         });
-    })
-    .filter((m): m is AuszahlungsMonat => !!m);
+      }
+      return auszahlungen;
+    });
 }

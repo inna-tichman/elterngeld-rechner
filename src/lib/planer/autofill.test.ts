@@ -61,6 +61,7 @@ describe("baueAuszahlungsMonate", () => {
       parent: "A",
       bonus: false,
     });
+    expect(monate[11]).toMatchObject({ typ: "basis", parent: "A", bonus: false });
     expect(monate[12]).toMatchObject({ typ: "basis", parent: "B", bonus: false });
     expect(monate[13]).toMatchObject({ typ: "plus", parent: "A", bonus: false });
     expect(monate[15]).toMatchObject({ typ: "plus", parent: "A", bonus: true });

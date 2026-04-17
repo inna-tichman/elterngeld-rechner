@@ -853,20 +853,22 @@ export default function ElterngeldRechner() {
                         Monatsliste Auszahlung
                       </p>
                     </div>
-                    {auszahlungsMonate.map((monat) => (
-                      <div key={`${monat.lebensmonat}-${monat.parent}`} className="px-5 py-3 border-b border-sage/10 last:border-0">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-semibold text-ink">
-                            LM {monat.lebensmonat} · {monat.label}
-                          </span>
-                          <span className="text-sm font-semibold text-ink">{fmt(monat.betrag)}</span>
-                        </div>
-                        <p className="text-xs text-ink-mid mt-1">
-                          Elternteil {monat.parent} · {monat.typ === "basis" ? "Basis" : "Plus"}
-                          {monat.bonus ? " · Bonusmonat" : ""}
-                        </p>
-                      </div>
-                    ))}
+                    <ul>
+                      {auszahlungsMonate.map((monat) => (
+                        <li key={`${monat.lebensmonat}-${monat.parent}`} className="px-5 py-3 border-b border-sage/10 last:border-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-ink">
+                              LM {monat.lebensmonat} · {monat.label}
+                            </span>
+                            <span className="text-sm font-semibold text-ink">{fmt(monat.betrag)}</span>
+                          </div>
+                          <p className="text-xs text-ink-mid mt-1">
+                            Elternteil {monat.parent} · {monat.typ === "basis" ? "Basis" : "Plus"}
+                            {monat.bonus ? " · Bonusmonat" : ""}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
               </div>
