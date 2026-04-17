@@ -62,6 +62,8 @@ const toggleBtnClass = (active: boolean, extra = "px-3") =>
 
 const numberInputClass =
   "w-full py-2.5 pl-4 pr-16 border-2 border-sage-mid rounded-xl text-base font-medium text-ink bg-white focus:outline-none focus:border-sage transition-colors appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none";
+const monthInputClass =
+  "w-full py-2.5 pl-4 pr-4 border-2 border-sage-mid rounded-xl text-base font-medium text-ink bg-white focus:outline-none focus:border-sage transition-colors";
 
 type ToggleProps = {
   options: { label: string; value: string }[];
@@ -291,7 +293,7 @@ const help = {
     en: "Choose Basis, Plus, or Mix for your planned benefit type.",
   },
   startmonat: {
-    de: "Startmonat für Monatslisten und automatische Planner-Zuordnung.",
+    de: "Startmonat für Monatslisten und automatische Planer-Zuordnung.",
     en: "Start month used for month lists and automatic planner mapping.",
   },
   basisMonate: {
@@ -315,7 +317,7 @@ const help = {
     en: "Additional children in a multiple birth for the supplement.",
   },
   planerKalender: {
-    de: "Der Planner wird automatisch aus Modell und Startmonat befüllt und kann danach manuell angepasst werden.",
+    de: "Der Planer wird automatisch aus Modell und Startmonat befüllt und kann danach manuell angepasst werden.",
     en: "The planner is auto-filled from model and start month, then can be edited manually.",
   },
   plannerStunden: {
@@ -885,7 +887,7 @@ export default function ElterngeldRechner() {
                     type="month"
                     value={startMonat}
                     onChange={(e) => setStartMonat(e.target.value)}
-                    className={numberInputClass.replace("pr-16", "pr-4")}
+                    className={monthInputClass}
                   />
                 </Field>
                 <Field
@@ -1158,10 +1160,7 @@ export default function ElterngeldRechner() {
               <div className="absolute -bottom-12 -left-4 w-44 h-44 rounded-full bg-white/5" />
               <div className="relative z-10">
                 <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-0.5">
-                  Elterngeld Rechner
-                </p>
-                <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-0.5">
-                  {modell === "plus" ? "ElterngeldPlus / Monat" : "Basiselterngeld / Monat"}
+                  Elterngeld Rechner · {modell === "plus" ? "ElterngeldPlus / Monat" : "Basiselterngeld / Monat"}
                 </p>
                 <div className="flex items-baseline gap-3 mb-1">
                   <p className="font-serif text-4xl text-white leading-none">
