@@ -8,6 +8,7 @@ export type BezugsTyp = "basis" | "plus";
 /** Einzelner Bezugseintrag eines Elternteils für einen Monat */
 export interface BezugsEintrag {
   typ: BezugsTyp;
+  bonus?: boolean;
   /**
    * Wochenarbeitsstunden während des Bezugs.
    * Relevant für Partnerschaftsbonus-Prüfung (25–32 Std/Woche).

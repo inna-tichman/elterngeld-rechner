@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useReducer, useEffect } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import {
   berechneElterngeld,
   type EingabenParams,
@@ -15,22 +15,6 @@ import {
   type Steuerklasse,
   type Bundesland,
 } from "@/lib/steuer/lohnsteuer";
-import {
-  berechnePlanStatistik,
-  validierePlan,
-  schaetzePlanBetrag,
-  type PlanBetragsSchaetzung,
-} from "@/lib/planer/validation";
-import type {
-  PlanState,
-  PlanMonat,
-  BezugsEintrag,
-  BezugsTyp,
-  ParentId,
-  PlanStatistik,
-  PlanValidierungsProblem,
-} from "@/lib/planer/types";
-import type { ErgebnisDetails } from "@/lib/berechnung";
 import { baueAuszahlungsMonate, erstelleAutoPlan } from "@/lib/planer/autofill";
 
 const fmt = (n: number) =>
@@ -38,14 +22,6 @@ const fmt = (n: number) =>
     style: "currency",
     currency: "EUR",
     maximumFractionDigits: 0,
-  }).format(n);
-
-const fmtMitCents = (n: number) =>
-  new Intl.NumberFormat("de-DE", {
-    style: "currency",
-    currency: "EUR",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
   }).format(n);
 
 const pct = (n: number) => `${Math.round(n * 100)} %`;
@@ -191,56 +167,15 @@ function NumberInput({ id, value, onChange, unit, min, max, placeholder }: Numbe
   );
 }
 
-// ─── Planer reducer ───────────────────────────────────────────────────────────
-
-type PlanerAktion =
-  | { type: "SET_EINTRAG"; monat: number; parent: ParentId; eintrag: BezugsEintrag | null }
-  | { type: "CLEAR_MONAT"; monat: number }
-  | { type: "SET_PLAN"; plan: PlanState }
-  | { type: "RESET" };
-
-function planerReducer(state: PlanState, action: PlanerAktion): PlanState {
-  const next = new Map(state);
-  switch (action.type) {
-    case "SET_EINTRAG": {
-      const bestehend: PlanMonat = next.get(action.monat) ?? {
-        monat: action.monat,
-        elternteilA: null,
-        elternteilB: null,
-      };
-      const updated: PlanMonat = {
-        ...bestehend,
-        ...(action.parent === "A"
-          ? { elternteilA: action.eintrag }
-          : { elternteilB: action.eintrag }),
-      };
-      if (!updated.elternteilA && !updated.elternteilB) {
-        next.delete(action.monat);
-      } else {
-        next.set(action.monat, updated);
-      }
-      return next;
-    }
-    case "CLEAR_MONAT":
-      next.delete(action.monat);
-      return next;
-    case "RESET":
-      return new Map();
-    case "SET_PLAN":
-      return new Map(action.plan);
-  }
-}
-
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type TabId = "einkommen" | "modell" | "extras" | "details" | "planer";
+type TabId = "einkommen" | "modell" | "extras" | "details";
 
 const TABS: { id: TabId; label: string }[] = [
   { id: "einkommen", label: "Einkommen" },
   { id: "modell", label: "Modell" },
   { id: "extras", label: "Extras" },
   { id: "details", label: "Details" },
-  { id: "planer", label: "Planer" },
 ];
 
 const help = {
@@ -293,8 +228,8 @@ const help = {
     en: "Choose Basis, Plus, or Mix for your planned benefit type.",
   },
   startmonat: {
-    de: "Startmonat für Monatslisten und automatische Planer-Zuordnung.",
-    en: "Start month used for month lists and automatic planner mapping.",
+    de: "Startmonat für die Monatsliste.",
+    en: "Start month used for the monthly list.",
   },
   basisMonate: {
     de: "Anzahl der Basiselterngeld-Monate im Modell.",
@@ -315,14 +250,6 @@ const help = {
   mehrlinge: {
     de: "Zusätzliche Kinder bei Mehrlingsgeburt für Zuschlag.",
     en: "Additional children in a multiple birth for the supplement.",
-  },
-  planerKalender: {
-    de: "Der Planer wird automatisch aus Modell und Startmonat befüllt und kann danach manuell angepasst werden.",
-    en: "The planner is auto-filled from model and start month, then can be edited manually.",
-  },
-  plannerStunden: {
-    de: "Für den Partnerschaftsbonus sind 25–32 Wochenstunden in Plus-Monaten wichtig.",
-    en: "For partnership bonus checks, 25–32 weekly hours in Plus months are relevant.",
   },
 } satisfies Record<string, HilfeText>;
 
@@ -361,10 +288,6 @@ export default function ElterngeldRechner() {
   const [jahresgewinn, setJahresgewinn] = useState<number>(0);
   const [kvMonatsbeitrag, setKvMonatsbeitrag] = useState<number>(400);
   const [rvMonatsbeitrag, setRvMonatsbeitrag] = useState<number>(300);
-
-  // Planer
-  const [planState, dispatch] = useReducer(planerReducer, new Map<number, PlanMonat>());
-  const [editMonat, setEditMonat] = useState<number | null>(null);
 
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
@@ -466,8 +389,6 @@ export default function ElterngeldRechner() {
     steuerklasse,
   ]);
 
-  const planStatistik = useMemo(() => berechnePlanStatistik(planState), [planState]);
-  const planProbleme = useMemo(() => validierePlan(planState), [planState]);
   const autoPlan = useMemo(
     () =>
       erstelleAutoPlan({
@@ -478,27 +399,14 @@ export default function ElterngeldRechner() {
         mixPlus,
         partnerschaftsbonus,
       }),
-    [modell, monateBasis, monatePlus, mixBasis, mixPlus, partnerschaftsbonus, startMonat],
+    [modell, monateBasis, monatePlus, mixBasis, mixPlus, partnerschaftsbonus],
   );
-  const syncPlanMitModell = useCallback(() => {
-    dispatch({ type: "SET_PLAN", plan: autoPlan });
-    setEditMonat(null);
-  }, [autoPlan]);
-
-  useEffect(() => {
-    syncPlanMitModell();
-  }, [syncPlanMitModell]);
-  const planBetrag = useMemo(() => {
-    if (!ergebnis) return null;
-    return schaetzePlanBetrag(planState, ergebnis.basisProMonat, ergebnis.plusProMonat);
-  }, [planState, ergebnis]);
   const auszahlungsMonate = useMemo(() => {
     if (!ergebnis) return [];
     const basisMitMehrlingen = ergebnis.basisProMonat + ergebnis.mehrlingszuschlag;
     const plusMitMehrlingen = ergebnis.plusProMonat + ergebnis.mehrlingszuschlag / 2;
-    const planQuelle = planState.size > 0 ? planState : autoPlan;
-    return baueAuszahlungsMonate(startMonat, planQuelle, basisMitMehrlingen, plusMitMehrlingen);
-  }, [ergebnis, startMonat, autoPlan, planState]);
+    return baueAuszahlungsMonate(startMonat, autoPlan, basisMitMehrlingen, plusMitMehrlingen);
+  }, [ergebnis, startMonat, autoPlan]);
 
   const handleBeschaeftigungChange = (v: string) => {
     const b = v as Beschaeftigung;
@@ -517,9 +425,6 @@ export default function ElterngeldRechner() {
 
       {/* Header */}
       <div className="shrink-0 text-center px-4 pt-3 pb-1 relative z-10">
-        <h1 className="font-serif text-2xl text-ink leading-tight">
-          <em className="italic text-sage not-italic">Elterngeld Rechner</em>
-        </h1>
         <div className="mt-2 inline-flex items-center gap-1 rounded-xl bg-white/80 border border-sage/10 p-1">
           {(["de", "en"] as ErklaerSprache[]).map((lang) => (
             <button
@@ -840,71 +745,132 @@ export default function ElterngeldRechner() {
             hidden={activeTab !== "modell"}
           >
             {activeTab === "modell" && (
-              <div className="bg-white rounded-2xl border border-sage/10 p-5">
-                <Field label="Welches Modell?" help={help.modell} lang={erklaerSprache}>
-                  <Toggle
-                    options={[
-                      { label: "Basis", value: "basis" },
-                      { label: "Plus", value: "plus" },
-                      { label: "Mix", value: "mix" },
-                    ]}
-                    value={modell}
-                    onChange={(v) => setModell(v as Modell)}
-                    ariaLabel="Elterngeld-Modell"
-                  />
-                </Field>
-                {modell === "basis" && (
+              <div className="space-y-3">
+                <div className="bg-white rounded-2xl border border-sage/10 overflow-hidden">
+                  <div className="px-5 py-2 bg-sage-light border-b border-sage/10">
+                    <p className="text-xs font-semibold text-sage uppercase tracking-wide">
+                      Plan-Zusammenfassung
+                    </p>
+                  </div>
+                  {ergebnis ? (
+                    <>
+                      {[
+                        { key: "Monatlich", val: fmt(ergebnis.monatlichHaupt) },
+                        { key: "Gesamt", val: fmt(ergebnis.gesamtBetrag) },
+                        { key: "Dauer", val: `${ergebnis.bezugsdauer} Monate` },
+                        { key: "Ersatzrate", val: pct(ergebnis.ersatzrate) },
+                        ...(partnerschaftsbonus
+                          ? [{ key: "Bonusmonate", val: `+${ergebnis.bonusMonate}` }]
+                          : []),
+                      ].map((row) => (
+                        <div
+                          key={row.key}
+                          className="flex justify-between items-center px-5 py-3 border-b border-sage/10 last:border-0"
+                        >
+                          <span className="text-sm text-ink-mid">{row.key}</span>
+                          <span className="text-sm font-semibold text-ink">{row.val}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <p className="px-5 py-4 text-sm text-ink-light text-center">
+                      Bitte zuerst Einkommen eingeben.
+                    </p>
+                  )}
+                </div>
+
+                <div className="bg-white rounded-2xl border border-sage/10 p-5">
+                  <Field label="Welches Modell?" help={help.modell} lang={erklaerSprache}>
+                    <Toggle
+                      options={[
+                        { label: "Basis", value: "basis" },
+                        { label: "Plus", value: "plus" },
+                        { label: "Mix", value: "mix" },
+                      ]}
+                      value={modell}
+                      onChange={(v) => setModell(v as Modell)}
+                      ariaLabel="Elterngeld-Modell"
+                    />
+                  </Field>
+                  {modell === "basis" && (
+                    <Field
+                      label="Monate Basiselterngeld"
+                      help={help.basisMonate}
+                      lang={erklaerSprache}
+                    >
+                      <NumberInput value={monateBasis} onChange={setMonateBasis} unit="Monate" min={1} max={14} />
+                    </Field>
+                  )}
+                  {modell === "plus" && (
+                    <Field
+                      label="Monate ElterngeldPlus"
+                      help={help.plusMonate}
+                      lang={erklaerSprache}
+                    >
+                      <NumberInput value={monatePlus} onChange={setMonatePlus} unit="Monate" min={1} max={28} />
+                    </Field>
+                  )}
+                  {modell === "mix" && (
+                    <>
+                      <Field label="Basis-Monate" help={help.basisMonate} lang={erklaerSprache}>
+                        <NumberInput value={mixBasis} onChange={setMixBasis} unit="Monate" min={1} max={14} />
+                      </Field>
+                      <Field label="ElterngeldPlus-Monate" help={help.plusMonate} lang={erklaerSprache}>
+                        <NumberInput value={mixPlus} onChange={setMixPlus} unit="Monate" min={1} max={28} />
+                      </Field>
+                    </>
+                  )}
+                  <Field label="Startmonat" help={help.startmonat} lang={erklaerSprache} id="input-startmonat">
+                    <input
+                      id="input-startmonat"
+                      type="month"
+                      value={startMonat}
+                      onChange={(e) => setStartMonat(e.target.value)}
+                      className={monthInputClass}
+                    />
+                  </Field>
                   <Field
-                    label="Monate Basiselterngeld"
-                    help={help.basisMonate}
+                    label="Partnerschaftsbonus?"
+                    help={help.partnerschaftsbonus}
                     lang={erklaerSprache}
                   >
-                    <NumberInput value={monateBasis} onChange={setMonateBasis} unit="Monate" min={1} max={14} />
+                    <Toggle
+                      options={[
+                        { label: "Ja", value: "ja" },
+                        { label: "Nein", value: "nein" },
+                      ]}
+                      value={partnerschaftsbonus ? "ja" : "nein"}
+                      onChange={(v) => setPartnerschaftsbonus(v === "ja")}
+                      ariaLabel="Partnerschaftsbonus"
+                    />
                   </Field>
+                </div>
+
+                {ergebnis && (
+                  <div className="bg-white rounded-2xl border border-sage/10 overflow-hidden">
+                    <div className="px-5 py-2 bg-sage-light border-b border-sage/10">
+                      <p className="text-xs font-semibold text-sage uppercase tracking-wide">
+                        Monatsliste Auszahlung
+                      </p>
+                    </div>
+                    <ul>
+                      {auszahlungsMonate.map((monat) => (
+                        <li key={`${monat.lebensmonat}-${monat.parent}`} className="px-5 py-3 border-b border-sage/10 last:border-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-semibold text-ink">
+                              LM {monat.lebensmonat} · {monat.label}
+                            </span>
+                            <span className="text-sm font-semibold text-ink">{fmt(monat.betrag)}</span>
+                          </div>
+                          <p className="text-xs text-ink-mid mt-1">
+                            Elternteil {monat.parent} · {monat.typ === "basis" ? "Basis" : "Plus"}
+                            {monat.bonus ? " · Bonusmonat" : ""}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
-                {modell === "plus" && (
-                  <Field
-                    label="Monate ElterngeldPlus"
-                    help={help.plusMonate}
-                    lang={erklaerSprache}
-                  >
-                    <NumberInput value={monatePlus} onChange={setMonatePlus} unit="Monate" min={1} max={28} />
-                  </Field>
-                )}
-                {modell === "mix" && (
-                  <>
-                    <Field label="Basis-Monate" help={help.basisMonate} lang={erklaerSprache}>
-                      <NumberInput value={mixBasis} onChange={setMixBasis} unit="Monate" min={1} max={14} />
-                    </Field>
-                    <Field label="ElterngeldPlus-Monate" help={help.plusMonate} lang={erklaerSprache}>
-                      <NumberInput value={mixPlus} onChange={setMixPlus} unit="Monate" min={1} max={28} />
-                    </Field>
-                  </>
-                )}
-                <Field label="Startmonat" help={help.startmonat} lang={erklaerSprache} id="input-startmonat">
-                  <input
-                    id="input-startmonat"
-                    type="month"
-                    value={startMonat}
-                    onChange={(e) => setStartMonat(e.target.value)}
-                    className={monthInputClass}
-                  />
-                </Field>
-                <Field
-                  label="Partnerschaftsbonus?"
-                  help={help.partnerschaftsbonus}
-                  lang={erklaerSprache}
-                >
-                  <Toggle
-                    options={[
-                      { label: "Ja", value: "ja" },
-                      { label: "Nein", value: "nein" },
-                    ]}
-                    value={partnerschaftsbonus ? "ja" : "nein"}
-                    onChange={(v) => setPartnerschaftsbonus(v === "ja")}
-                    ariaLabel="Partnerschaftsbonus"
-                  />
-                </Field>
               </div>
             )}
           </div>
@@ -1066,53 +1032,11 @@ export default function ElterngeldRechner() {
                   )}
                 </div>
 
-                {ergebnis && (
-                  <div className="bg-white rounded-2xl border border-sage/10 overflow-hidden mb-3">
-                    <div className="px-5 py-2 bg-sage-light border-b border-sage/10">
-                      <p className="text-xs font-semibold text-sage uppercase tracking-wide">
-                        Monatsliste Auszahlung
-                      </p>
-                    </div>
-                    {auszahlungsMonate.map((monat) => (
-                      <div
-                        key={monat.lebensmonat}
-                        className="flex justify-between items-center px-5 py-2.5 border-b border-sage/10 last:border-0"
-                      >
-                        <span className="text-sm text-ink-mid">{monat.label}</span>
-                        <span className="text-sm font-semibold text-ink">{fmtMitCents(monat.betrag)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
                 <p className="text-xs text-ink-light text-center leading-relaxed px-2">
                   Unverbindliche Schätzung nach §2 BEEG. Maßgeblich ist der Bescheid deiner
                   Elterngeldstelle. Lohnsteuer nach §32a EStG 2024 (Näherung für GKV-Versicherte).
                 </p>
               </>
-            )}
-          </div>
-
-          {/* Planer */}
-          <div
-            role="tabpanel"
-            id="panel-planer"
-            aria-labelledby="tab-planer"
-            hidden={activeTab !== "planer"}
-          >
-            {activeTab === "planer" && (
-              <PlanerPanel
-                planState={planState}
-                dispatch={dispatch}
-                editMonat={editMonat}
-                setEditMonat={setEditMonat}
-                planStatistik={planStatistik}
-                planProbleme={planProbleme}
-                planBetrag={planBetrag}
-                ergebnis={ergebnis}
-                onSyncFromModel={syncPlanMitModell}
-                explainLang={erklaerSprache}
-              />
             )}
           </div>
 
@@ -1199,304 +1123,6 @@ export default function ElterngeldRechner() {
           )}
         </div>
       </div>
-    </div>
-  );
-}
-
-// ─── Planer Panel ─────────────────────────────────────────────────────────────
-
-interface PlanerPanelProps {
-  planState: PlanState;
-  dispatch: React.Dispatch<PlanerAktion>;
-  editMonat: number | null;
-  setEditMonat: (m: number | null) => void;
-  planStatistik: PlanStatistik;
-  planProbleme: PlanValidierungsProblem[];
-  planBetrag: PlanBetragsSchaetzung | null;
-  ergebnis: ErgebnisDetails | null;
-  onSyncFromModel: () => void;
-  explainLang: ErklaerSprache;
-}
-
-const PARENT_LABELS: Record<ParentId, string> = { A: "Elternteil A", B: "Elternteil B" };
-const TYP_LABELS: Record<BezugsTyp, string> = { basis: "Basis", plus: "Plus" };
-
-function PlanerPanel({
-  planState,
-  dispatch,
-  editMonat,
-  setEditMonat,
-  planStatistik,
-  planProbleme,
-  planBetrag,
-  ergebnis,
-  onSyncFromModel,
-  explainLang,
-}: PlanerPanelProps) {
-
-  function toggleEintrag(monat: number, parent: ParentId, typ: BezugsTyp) {
-    const pm = planState.get(monat);
-    const aktuell: BezugsEintrag | null =
-      parent === "A" ? (pm?.elternteilA ?? null) : (pm?.elternteilB ?? null);
-    if (aktuell && aktuell.typ === typ) {
-      dispatch({ type: "SET_EINTRAG", monat, parent, eintrag: null });
-    } else {
-      dispatch({
-        type: "SET_EINTRAG",
-        monat,
-        parent,
-        eintrag: { typ, stundenProWoche: aktuell?.stundenProWoche },
-      });
-    }
-  }
-
-  function setStunden(monat: number, parent: ParentId, stunden: number) {
-    const pm = planState.get(monat);
-    const aktuell: BezugsEintrag | null =
-      parent === "A" ? (pm?.elternteilA ?? null) : (pm?.elternteilB ?? null);
-    if (!aktuell) return;
-    dispatch({
-      type: "SET_EINTRAG",
-      monat,
-      parent,
-      eintrag: { ...aktuell, stundenProWoche: stunden },
-    });
-  }
-
-  const fehler = planProbleme.filter((p) => p.typ === "fehler");
-  const warnungen = planProbleme.filter((p) => p.typ === "warnung");
-  const infos = planProbleme.filter((p) => p.typ === "info");
-
-  return (
-    <div className="space-y-3">
-      {/* Summary */}
-      <div className="bg-white rounded-2xl border border-sage/10 p-4">
-        <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-3">
-          Plan-Zusammenfassung
-        </p>
-        <div className="grid grid-cols-2 gap-2 text-sm">
-          {(["A", "B"] as ParentId[]).map((p) => (
-            <div key={p} className="bg-sage-light rounded-xl p-3">
-              <p className="text-xs text-ink-mid mb-1">{PARENT_LABELS[p]}</p>
-              <p className="font-semibold text-ink">
-                {p === "A"
-                  ? `${planStatistik.basisMonateA}× Basis, ${planStatistik.plusMonateA}× Plus`
-                  : `${planStatistik.basisMonateB}× Basis, ${planStatistik.plusMonateB}× Plus`}
-              </p>
-              <p className="text-xs text-ink-mid mt-0.5">
-                = {p === "A" ? planStatistik.gesamtMonateA : planStatistik.gesamtMonateB} Monate gesamt
-              </p>
-            </div>
-          ))}
-        </div>
-        {planBetrag && ergebnis ? (
-          <div className="mt-3 flex justify-between items-center bg-sage/10 rounded-xl px-4 py-3">
-            <span className="text-sm text-ink-mid">Geplanter Gesamtbetrag</span>
-            <span className="text-base font-bold text-sage">
-              {fmt(planBetrag.gesamt)}
-            </span>
-          </div>
-        ) : (
-          !ergebnis && (
-            <p className="text-xs text-ink-light mt-2 text-center">
-              Einkommen eingeben, um Beträge zu berechnen.
-            </p>
-          )
-        )}
-        {planStatistik.bonusMonateGesamt > 0 && (
-          <p className="text-xs text-sage mt-2 text-center font-medium">
-            🎉 Partnerschaftsbonus erkannt: +{planStatistik.bonusMonateGesamt} Monate
-          </p>
-        )}
-      </div>
-
-      {/* Validierungsmeldungen */}
-      {(fehler.length > 0 || warnungen.length > 0 || infos.length > 0) && (
-        <div className="space-y-2">
-          {fehler.map((p) => (
-            <div key={p.code} className="bg-red-50 border border-red-200 rounded-xl px-4 py-3" role="alert">
-              <p className="text-xs font-semibold text-red-700 mb-0.5">Fehler</p>
-              <p className="text-xs text-red-600">{p.meldung}</p>
-            </div>
-          ))}
-          {warnungen.map((p) => (
-            <div key={p.code} className="bg-yellow-50 border border-yellow-200 rounded-xl px-4 py-3">
-              <p className="text-xs font-semibold text-yellow-700 mb-0.5">Hinweis</p>
-              <p className="text-xs text-yellow-600">{p.meldung}</p>
-            </div>
-          ))}
-          {infos.map((p) => (
-            <div key={p.code} className="bg-sage-light border border-sage/20 rounded-xl px-4 py-3">
-              <p className="text-xs text-ink-mid">{p.meldung}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={onSyncFromModel}
-        className="w-full py-2 rounded-xl text-sm font-medium border border-sage-mid text-ink-mid hover:border-sage hover:text-ink transition-all"
-      >
-        Mit Modell synchronisieren
-      </button>
-
-      {planState.size > 0 && (
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "RESET" })}
-          className="w-full py-2 rounded-xl text-sm font-medium border border-sage/20 text-ink-light hover:border-sage hover:text-ink transition-all"
-        >
-          Plan zurücksetzen
-        </button>
-      )}
-
-      {/* Kalender */}
-      <div className="bg-white rounded-2xl border border-sage/10 p-4">
-        <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-3">
-          Monatskalender (Lebensmonat 1–36)
-        </p>
-        <div className="mb-3">
-          <HelpSheetButton label="Planer" help={help.planerKalender} lang={explainLang} />
-        </div>
-        <div className="flex gap-3 mb-3 text-xs text-ink-mid flex-wrap">
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-sage" />
-            A – Basis
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-sage/40 border border-sage/30" />
-            A – Plus
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-amber-500" />
-            B – Basis
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="inline-block w-3 h-3 rounded-sm bg-amber-300 border border-amber-400" />
-            B – Plus
-          </span>
-        </div>
-
-        <div className="grid grid-cols-6 gap-1.5">
-          {Array.from({ length: 36 }, (_, i) => i + 1).map((m) => {
-            const pm = planState.get(m);
-            const aE = pm?.elternteilA ?? null;
-            const bE = pm?.elternteilB ?? null;
-            const isEdit = editMonat === m;
-            const hasBezug = aE || bE;
-
-            let cellBg = "bg-sage/5 border border-sage/10 text-ink-light";
-            if (aE && !bE)
-              cellBg =
-                aE.typ === "basis"
-                  ? "bg-sage border-sage text-white"
-                  : "bg-sage/40 border-sage/30 text-ink";
-            else if (!aE && bE)
-              cellBg =
-                bE.typ === "basis"
-                  ? "bg-amber-500 border-amber-500 text-white"
-                  : "bg-amber-300 border-amber-300 text-ink";
-            else if (aE && bE)
-              cellBg = "bg-gradient-to-br from-sage to-amber-400 border-sage/30 text-white";
-
-            return (
-              <div key={m} className="relative">
-                <button
-                  type="button"
-                  aria-label={`Monat ${m}${hasBezug ? " (belegt)" : ""}`}
-                  aria-expanded={isEdit}
-                  onClick={() => setEditMonat(isEdit ? null : m)}
-                  className={`w-full aspect-square rounded-lg text-xs font-semibold flex items-center justify-center transition-all border focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${cellBg} ${
-                    isEdit ? "ring-2 ring-offset-1 ring-ink" : ""
-                  }`}
-                >
-                  {m}
-                </button>
-
-                {isEdit && (
-                  <div
-                    className="absolute top-full left-0 z-20 mt-1 bg-white rounded-xl shadow-lg border border-sage/20 p-3 w-48"
-                    role="dialog"
-                    aria-label={`Bezug für Monat ${m} bearbeiten`}
-                  >
-                    <p className="text-xs font-semibold text-ink mb-2">Monat {m}</p>
-                    {(["A", "B"] as ParentId[]).map((parent) => {
-                      const eintrag = parent === "A" ? aE : bE;
-                      const color = parent === "A" ? "text-sage" : "text-amber-600";
-                      const activeColor =
-                        parent === "A"
-                          ? "bg-sage text-white border-sage"
-                          : "bg-amber-500 text-white border-amber-500";
-                      return (
-                        <div key={parent} className="mb-3 last:mb-0">
-                          <p className={`text-[11px] font-semibold ${color} mb-1`}>
-                            {PARENT_LABELS[parent]}
-                          </p>
-                          <div className="flex gap-1 mb-1.5">
-                            {(["basis", "plus"] as BezugsTyp[]).map((typ) => (
-                              <button
-                                key={typ}
-                                type="button"
-                                aria-pressed={eintrag?.typ === typ}
-                                onClick={() => toggleEintrag(m, parent, typ)}
-                                className={`flex-1 py-1 rounded-lg text-[11px] font-medium border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage ${
-                                  eintrag?.typ === typ
-                                    ? activeColor
-                                    : "bg-white text-ink-mid border-sage-mid hover:border-sage"
-                                }`}
-                              >
-                                {TYP_LABELS[typ]}
-                              </button>
-                            ))}
-                          </div>
-                          {eintrag?.typ === "plus" && (
-                            <div>
-                              <div className="flex items-center justify-between gap-2 mb-1">
-                                <p className="text-[10px] text-ink-light">
-                                  Std./Woche (Partnerschaftsbonus)
-                                </p>
-                                <HelpSheetButton label="Std./Woche" help={help.plannerStunden} lang={explainLang} />
-                              </div>
-                              <input
-                                type="number"
-                                value={eintrag.stundenProWoche ?? ""}
-                                onChange={(e) =>
-                                  setStunden(m, parent, parseFloat(e.target.value) || 0)
-                                }
-                                placeholder="25–32"
-                                min={0}
-                                max={40}
-                                className="w-full border border-sage-mid rounded-lg px-2 py-1 text-xs text-ink focus:outline-none focus:border-sage"
-                                aria-label="Wochenstunden für Partnerschaftsbonus-Prüfung"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        dispatch({ type: "CLEAR_MONAT", monat: m });
-                        setEditMonat(null);
-                      }}
-                      className="w-full mt-1 py-1 text-[11px] text-ink-light hover:text-ink border border-sage/10 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
-                    >
-                      Monat leeren
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <p className="text-xs text-ink-light text-center leading-relaxed px-2">
-        Klicke auf einen Monat, um Bezug einzutragen. Für den Partnerschaftsbonus
-        beide Elternteile mit Plus-Bezug und 25–32 Std./Woche in mind. 4 aufeinanderfolgenden Monaten.
-      </p>
     </div>
   );
 }
