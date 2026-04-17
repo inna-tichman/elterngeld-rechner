@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useCallback, useReducer } from "react";
+import { useState, useMemo, useRef, useCallback, useReducer, useEffect } from "react";
 import {
   berechneElterngeld,
   type EingabenParams,
@@ -31,6 +31,7 @@ import type {
   PlanValidierungsProblem,
 } from "@/lib/planer/types";
 import type { ErgebnisDetails } from "@/lib/berechnung";
+import { baueAuszahlungsMonate, erstelleAutoPlan } from "@/lib/planer/autofill";
 
 const fmt = (n: number) =>
   new Intl.NumberFormat("de-DE", {
@@ -39,7 +40,18 @@ const fmt = (n: number) =>
     maximumFractionDigits: 0,
   }).format(n);
 
+const fmtMitCents = (n: number) =>
+  new Intl.NumberFormat("de-DE", {
+    style: "currency",
+    currency: "EUR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(n);
+
 const pct = (n: number) => `${Math.round(n * 100)} %`;
+
+type ErklaerSprache = "de" | "en";
+type HilfeText = { de: string; en: string };
 
 const toggleBtnClass = (active: boolean, extra = "px-3") =>
   `flex-1 py-2 ${extra} rounded-xl text-sm font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
@@ -78,18 +90,68 @@ function Toggle({ options, value, onChange, ariaLabel }: ToggleProps) {
 
 type FieldProps = {
   label: string;
-  hint?: string;
+  help: HilfeText;
+  lang: ErklaerSprache;
   children: React.ReactNode;
   id?: string;
 };
 
-function Field({ label, hint, children, id }: FieldProps) {
+function HelpSheetButton({ label, help, lang }: { label: string; help: HilfeText; lang: ErklaerSprache }) {
+  const [offen, setOffen] = useState(false);
+
+  return (
+    <>
+      <button
+        type="button"
+        aria-label={`Hilfe zu ${label}`}
+        aria-haspopup="dialog"
+        onClick={() => setOffen(true)}
+        className="inline-flex w-7 h-7 items-center justify-center rounded-full border border-sage/30 text-sage hover:bg-sage-light focus:outline-none focus-visible:ring-2 focus-visible:ring-sage"
+      >
+        i
+      </button>
+      {offen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Erklärung: ${label}`}
+          onClick={() => setOffen(false)}
+        >
+          <div
+            className="absolute inset-x-0 bottom-0 bg-white rounded-t-3xl px-5 pt-4 pb-6 max-h-[70vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-10 h-1 rounded-full bg-sage/20 mx-auto mb-4" />
+            <div className="flex items-center justify-between gap-3 mb-2">
+              <p className="text-sm font-semibold text-ink">{label}</p>
+              <button
+                type="button"
+                onClick={() => setOffen(false)}
+                className="text-sm text-ink-mid hover:text-ink"
+              >
+                Schließen
+              </button>
+            </div>
+            <p className="text-sm text-ink-mid leading-relaxed whitespace-pre-line">
+              {lang === "de" ? help.de : help.en}
+            </p>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function Field({ label, help, lang, children, id }: FieldProps) {
   return (
     <div className="mb-4 last:mb-0">
-      <label className="block text-sm font-medium text-ink mb-1" htmlFor={id}>
-        {label}
-      </label>
-      {hint && <p className="text-xs text-ink-light mb-2">{hint}</p>}
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <label className="block text-sm font-medium text-ink" htmlFor={id}>
+          {label}
+        </label>
+        <HelpSheetButton label={label} help={help} lang={lang} />
+      </div>
       {children}
     </div>
   );
@@ -132,6 +194,7 @@ function NumberInput({ id, value, onChange, unit, min, max, placeholder }: Numbe
 type PlanerAktion =
   | { type: "SET_EINTRAG"; monat: number; parent: ParentId; eintrag: BezugsEintrag | null }
   | { type: "CLEAR_MONAT"; monat: number }
+  | { type: "SET_PLAN"; plan: PlanState }
   | { type: "RESET" };
 
 function planerReducer(state: PlanState, action: PlanerAktion): PlanState {
@@ -161,6 +224,8 @@ function planerReducer(state: PlanState, action: PlanerAktion): PlanState {
       return next;
     case "RESET":
       return new Map();
+    case "SET_PLAN":
+      return new Map(action.plan);
   }
 }
 
@@ -175,6 +240,95 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "details", label: "Details" },
   { id: "planer", label: "Planer" },
 ];
+
+const help = {
+  beschaeftigungsart: {
+    de: "Wähle die Art deiner Beschäftigung. Das bestimmt, welche Eingaben für die Netto-Schätzung nötig sind.",
+    en: "Choose your employment type. This determines which inputs are needed for the net income estimate.",
+  },
+  einkommensquelle: {
+    de: "Du kannst dein Netto direkt eingeben oder es aus dem Bruttolohn ableiten lassen.",
+    en: "You can enter net income directly or derive it from gross salary.",
+  },
+  netto: {
+    de: "Monatliches Durchschnitts-Netto im Bemessungszeitraum vor der Geburt.",
+    en: "Average monthly net income during the assessment period before birth.",
+  },
+  steuerklasse: {
+    de: "Die Steuerklasse beeinflusst die Netto-Ableitung aus dem Bruttogehalt.",
+    en: "Tax class affects the net-income calculation derived from gross salary.",
+  },
+  brutto: {
+    de: "Monatliches Bruttogehalt für die Netto-Berechnung.",
+    en: "Monthly gross salary used to estimate net income.",
+  },
+  kinderanzahl: {
+    de: "Anzahl der Kinder beeinflusst den Pflegeversicherungsanteil.",
+    en: "Number of children affects the long-term care insurance component.",
+  },
+  kirchensteuer: {
+    de: "Falls Kirchensteuer anfällt, wird sie in der Netto-Schätzung berücksichtigt.",
+    en: "If church tax applies, it is included in the net-income estimate.",
+  },
+  bundesland: {
+    de: "In BY/BW gilt 8 %, in anderen Bundesländern 9 % Kirchensteuer.",
+    en: "Church tax is 8% in BY/BW and 9% in other federal states.",
+  },
+  jahresgewinn: {
+    de: "Nutze den Gewinn/Einkünfte-Wert aus dem letzten Steuerbescheid vor Steuern.",
+    en: "Use the profit/income value from the latest tax assessment before taxes.",
+  },
+  kv: {
+    de: "Dein monatlicher Krankenversicherungsbeitrag (GKV oder PKV).",
+    en: "Your monthly health insurance contribution (public or private).",
+  },
+  rv: {
+    de: "Dein monatlicher Rentenversicherungsbeitrag.",
+    en: "Your monthly pension insurance contribution.",
+  },
+  modell: {
+    de: "Wähle Basis, Plus oder Mix für die geplante Bezugsart.",
+    en: "Choose Basis, Plus, or Mix for your planned benefit type.",
+  },
+  startmonat: {
+    de: "Startmonat für Monatslisten und automatische Planner-Zuordnung.",
+    en: "Start month used for month lists and automatic planner mapping.",
+  },
+  basisMonate: {
+    de: "Anzahl der Basiselterngeld-Monate im Modell.",
+    en: "Number of Basis Elterngeld months in your model.",
+  },
+  plusMonate: {
+    de: "Anzahl der ElterngeldPlus-Monate im Modell.",
+    en: "Number of ElterngeldPlus months in your model.",
+  },
+  partnerschaftsbonus: {
+    de: "Optionaler Bonus bei erfüllten Voraussetzungen für beide Elternteile.",
+    en: "Optional bonus if both parents meet the eligibility criteria.",
+  },
+  geschwisterbonus: {
+    de: "Zuschlag bei weiterem jungen Kind im Haushalt.",
+    en: "Additional amount if another young child lives in the household.",
+  },
+  mehrlinge: {
+    de: "Zusätzliche Kinder bei Mehrlingsgeburt für Zuschlag.",
+    en: "Additional children in a multiple birth for the supplement.",
+  },
+  planerKalender: {
+    de: "Der Planner wird automatisch aus Modell und Startmonat befüllt und kann danach manuell angepasst werden.",
+    en: "The planner is auto-filled from model and start month, then can be edited manually.",
+  },
+  plannerStunden: {
+    de: "Für den Partnerschaftsbonus sind 25–32 Wochenstunden in Plus-Monaten wichtig.",
+    en: "For partnership bonus checks, 25–32 weekly hours in Plus months are relevant.",
+  },
+} satisfies Record<string, HilfeText>;
+
+const aktuellerMonat = () => {
+  const d = new Date();
+  const m = `${d.getMonth() + 1}`.padStart(2, "0");
+  return `${d.getFullYear()}-${m}`;
+};
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -192,6 +346,8 @@ export default function ElterngeldRechner() {
   const [mehrlinge, setMehrlinge] = useState(0);
   const [steuerklasse, setSteuerklasse] = useState<Steuerklasse>(1);
   const [activeTab, setActiveTab] = useState<TabId>("einkommen");
+  const [erklaerSprache, setErklaerSprache] = useState<ErklaerSprache>("de");
+  const [startMonat, setStartMonat] = useState(aktuellerMonat);
 
   // Brutto mode
   const [brutto, setBrutto] = useState<number>(0);
@@ -310,10 +466,37 @@ export default function ElterngeldRechner() {
 
   const planStatistik = useMemo(() => berechnePlanStatistik(planState), [planState]);
   const planProbleme = useMemo(() => validierePlan(planState), [planState]);
+  const autoPlan = useMemo(
+    () =>
+      erstelleAutoPlan({
+        modell,
+        monateBasis,
+        monatePlus,
+        mixBasis,
+        mixPlus,
+        partnerschaftsbonus,
+      }),
+    [modell, monateBasis, monatePlus, mixBasis, mixPlus, partnerschaftsbonus, startMonat],
+  );
+  const syncPlanMitModell = useCallback(() => {
+    dispatch({ type: "SET_PLAN", plan: autoPlan });
+    setEditMonat(null);
+  }, [autoPlan]);
+
+  useEffect(() => {
+    syncPlanMitModell();
+  }, [syncPlanMitModell]);
   const planBetrag = useMemo(() => {
     if (!ergebnis) return null;
     return schaetzePlanBetrag(planState, ergebnis.basisProMonat, ergebnis.plusProMonat);
   }, [planState, ergebnis]);
+  const auszahlungsMonate = useMemo(() => {
+    if (!ergebnis) return [];
+    const basisMitMehrlingen = ergebnis.basisProMonat + ergebnis.mehrlingszuschlag;
+    const plusMitMehrlingen = ergebnis.plusProMonat + ergebnis.mehrlingszuschlag / 2;
+    const planQuelle = planState.size > 0 ? planState : autoPlan;
+    return baueAuszahlungsMonate(startMonat, planQuelle, basisMitMehrlingen, plusMitMehrlingen);
+  }, [ergebnis, startMonat, autoPlan, planState]);
 
   const handleBeschaeftigungChange = (v: string) => {
     const b = v as Beschaeftigung;
@@ -323,98 +506,37 @@ export default function ElterngeldRechner() {
   };
 
   return (
-    <div className="h-dvh flex flex-col overflow-hidden bg-sand">
+    <div className="h-dvh flex flex-col overflow-hidden bg-sand relative">
+      <div className="absolute inset-0 pointer-events-none select-none opacity-[0.04] flex flex-col justify-around text-center font-semibold text-sage text-lg">
+        <p>Kostenlos · Schnell · Ohne Anmeldung</p>
+        <p>Kostenlos · Schnell · Ohne Anmeldung</p>
+        <p>Kostenlos · Schnell · Ohne Anmeldung</p>
+      </div>
 
       {/* Header */}
-      <div className="shrink-0 text-center px-4 pt-3 pb-1">
+      <div className="shrink-0 text-center px-4 pt-3 pb-1 relative z-10">
         <h1 className="font-serif text-2xl text-ink leading-tight">
           <em className="italic text-sage not-italic">Elterngeld Rechner</em>
         </h1>
-        <p className="text-xs text-ink-light font-light">
-          Kostenlos · Schnell · Ohne Anmeldung
-        </p>
-      </div>
-
-      {/* Ergebnis — always pinned */}
-      <div className="shrink-0 px-4 pt-2 pb-2">
-        <div className="max-w-lg mx-auto">
-          {ergebnis ? (
-            <div className="bg-sage rounded-2xl px-5 py-4 relative overflow-hidden">
-              <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/5" />
-              <div className="absolute -bottom-12 -left-4 w-44 h-44 rounded-full bg-white/5" />
-              <div className="relative z-10">
-                <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-0.5">
-                  {modell === "plus" ? "ElterngeldPlus / Monat" : "Basiselterngeld / Monat"}
-                </p>
-                <div className="flex items-baseline gap-3 mb-1">
-                  <p className="font-serif text-4xl text-white leading-none">
-                    {fmt(ergebnis.monatlichHaupt)}
-                  </p>
-                  {modell === "mix" && (
-                    <p className="text-sm text-white/60">
-                      Plus: {fmt(ergebnis.plusProMonat)} / Mo.
-                    </p>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 gap-1.5 mt-2">
-                  {[
-                    { label: "Gesamt", val: fmt(ergebnis.gesamtBetrag) },
-                    { label: "Dauer", val: `${ergebnis.bezugsdauer} Mo.` },
-                    { label: "Ersatz", val: pct(ergebnis.ersatzrate) },
-                    { label: "Bonus", val: partnerschaftsbonus ? `+${ergebnis.bonusMonate} Mo.` : "–" },
-                  ].map((item) => (
-                    <div key={item.label} className="bg-white/10 rounded-xl p-2">
-                      <p className="text-[10px] text-white/55 mb-0.5">{item.label}</p>
-                      <p className="text-sm font-semibold text-white leading-tight">{item.val}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-sage/10 border border-sage/20 rounded-2xl px-5 py-4 text-center">
-              <p className="text-sm text-ink-mid">
-                Bitte Einkommen eingeben, um das Ergebnis zu sehen …
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tab bar */}
-      <div className="shrink-0 px-4 pb-2">
-        <div className="max-w-lg mx-auto">
-          <div
-            role="tablist"
-            aria-label="Eingabebereiche"
-            className="flex gap-1 bg-white rounded-2xl p-1 border border-sage/10"
-          >
-            {TABS.map((tab, i) => (
-              <button
-                key={tab.id}
-                role="tab"
-                id={`tab-${tab.id}`}
-                aria-selected={activeTab === tab.id}
-                aria-controls={`panel-${tab.id}`}
-                tabIndex={activeTab === tab.id ? 0 : -1}
-                ref={(el) => { tabRefs.current[i] = el; }}
-                onClick={() => setActiveTab(tab.id)}
-                onKeyDown={(e) => handleTabKeyDown(e, i)}
-                className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
-                  activeTab === tab.id
-                    ? "bg-sage text-white shadow-sm"
-                    : "text-ink-mid hover:text-ink hover:bg-sage-light"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        <div className="mt-2 inline-flex items-center gap-1 rounded-xl bg-white/80 border border-sage/10 p-1">
+          {(["de", "en"] as ErklaerSprache[]).map((lang) => (
+            <button
+              key={lang}
+              type="button"
+              aria-pressed={erklaerSprache === lang}
+              onClick={() => setErklaerSprache(lang)}
+              className={`px-2.5 py-1 text-xs rounded-lg transition-all ${
+                erklaerSprache === lang ? "bg-sage text-white" : "text-ink-mid hover:text-ink"
+              }`}
+            >
+              {lang.toUpperCase()}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Tab panels */}
-      <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 min-h-0 relative z-10">
         <div className="max-w-lg mx-auto">
 
           {/* Einkommen */}
@@ -427,7 +549,7 @@ export default function ElterngeldRechner() {
             {activeTab === "einkommen" && (
               <div className="space-y-3">
                 <div className="bg-white rounded-2xl border border-sage/10 p-5">
-                  <Field label="Beschäftigungsart">
+                  <Field label="Beschäftigungsart" help={help.beschaeftigungsart} lang={erklaerSprache}>
                     <Toggle
                       options={[
                         { label: "Angestellt", value: "angestellt" },
@@ -443,7 +565,8 @@ export default function ElterngeldRechner() {
                   {beschaeftigung !== "selbst" && (
                     <Field
                       label="Wie möchtest du dein Einkommen eingeben?"
-                      hint="Netto direkt eingeben oder aus dem Bruttogehalt berechnen lassen."
+                      help={help.einkommensquelle}
+                      lang={erklaerSprache}
                     >
                       <Toggle
                         options={[
@@ -460,7 +583,8 @@ export default function ElterngeldRechner() {
                   {nettoQuelle === "direkt" && (
                     <Field
                       label="Durchschn. Nettoeinkommen"
-                      hint="Monatlicher Durchschnitt der letzten 12 Monate vor Geburt"
+                      help={help.netto}
+                      lang={erklaerSprache}
                       id="input-netto"
                     >
                       <NumberInput
@@ -476,7 +600,7 @@ export default function ElterngeldRechner() {
                   )}
 
                   {beschaeftigung !== "selbst" && (
-                    <Field label="Steuerklasse">
+                    <Field label="Steuerklasse" help={help.steuerklasse} lang={erklaerSprache}>
                       <div className="flex gap-2" role="group" aria-label="Steuerklasse">
                         {([1, 2, 3, 4, 5, 6] as Steuerklasse[]).map((sk) => (
                           <button
@@ -500,7 +624,12 @@ export default function ElterngeldRechner() {
                     <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-3">
                       Netto aus Brutto berechnen
                     </p>
-                    <Field label="Bruttogehalt (monatlich)" id="input-brutto">
+                    <Field
+                      label="Bruttogehalt (monatlich)"
+                      help={help.brutto}
+                      lang={erklaerSprache}
+                      id="input-brutto"
+                    >
                       <NumberInput
                         id="input-brutto"
                         value={brutto}
@@ -511,7 +640,7 @@ export default function ElterngeldRechner() {
                         max={50000}
                       />
                     </Field>
-                    <Field label="Anzahl Kinder" hint="Relevant für Pflegeversicherungs-Beitrag">
+                    <Field label="Anzahl Kinder" help={help.kinderanzahl} lang={erklaerSprache}>
                       <Toggle
                         options={[
                           { label: "0", value: "0" },
@@ -524,7 +653,7 @@ export default function ElterngeldRechner() {
                         ariaLabel="Anzahl Kinder"
                       />
                     </Field>
-                    <Field label="Kirchensteuer?">
+                    <Field label="Kirchensteuer?" help={help.kirchensteuer} lang={erklaerSprache}>
                       <Toggle
                         options={[
                           { label: "Ja", value: "ja" },
@@ -536,7 +665,11 @@ export default function ElterngeldRechner() {
                       />
                     </Field>
                     {kirchensteuer && (
-                      <Field label="Bundesland (Kirchensteuersatz)">
+                      <Field
+                        label="Bundesland (Kirchensteuersatz)"
+                        help={help.bundesland}
+                        lang={erklaerSprache}
+                      >
                         <Toggle
                           options={[
                             { label: "BY / BW (8 %)", value: "BY" },
@@ -590,7 +723,8 @@ export default function ElterngeldRechner() {
                     </p>
                     <Field
                       label="Jahresgewinn / Einkünfte"
-                      hint="§ 4 EStG-Gewinn oder Einkünfte lt. letztem Steuerbescheid (vor Steuern)"
+                      help={help.jahresgewinn}
+                      lang={erklaerSprache}
                       id="input-gewinn"
                     >
                       <NumberInput
@@ -605,7 +739,8 @@ export default function ElterngeldRechner() {
                     </Field>
                     <Field
                       label="Krankenversicherung (monatl.)"
-                      hint="Freiwillige GKV oder PKV – eigener Beitrag"
+                      help={help.kv}
+                      lang={erklaerSprache}
                       id="input-kv"
                     >
                       <NumberInput
@@ -619,7 +754,8 @@ export default function ElterngeldRechner() {
                     </Field>
                     <Field
                       label="Rentenversicherung (monatl.)"
-                      hint="Freiwillig oder Pflichtversicherung"
+                      help={help.rv}
+                      lang={erklaerSprache}
                       id="input-rv"
                     >
                       <NumberInput
@@ -631,7 +767,7 @@ export default function ElterngeldRechner() {
                         max={2000}
                       />
                     </Field>
-                    <Field label="Anzahl Kinder">
+                    <Field label="Anzahl Kinder" help={help.kinderanzahl} lang={erklaerSprache}>
                       <Toggle
                         options={[
                           { label: "0", value: "0" },
@@ -644,7 +780,7 @@ export default function ElterngeldRechner() {
                         ariaLabel="Anzahl Kinder"
                       />
                     </Field>
-                    <Field label="Kirchensteuer?">
+                    <Field label="Kirchensteuer?" help={help.kirchensteuer} lang={erklaerSprache}>
                       <Toggle
                         options={[
                           { label: "Ja", value: "ja" },
@@ -703,7 +839,7 @@ export default function ElterngeldRechner() {
           >
             {activeTab === "modell" && (
               <div className="bg-white rounded-2xl border border-sage/10 p-5">
-                <Field label="Welches Modell?">
+                <Field label="Welches Modell?" help={help.modell} lang={erklaerSprache}>
                   <Toggle
                     options={[
                       { label: "Basis", value: "basis" },
@@ -716,28 +852,46 @@ export default function ElterngeldRechner() {
                   />
                 </Field>
                 {modell === "basis" && (
-                  <Field label="Monate Basiselterngeld" hint="Max. 14 Monate (bei 2 Elternteilen)">
+                  <Field
+                    label="Monate Basiselterngeld"
+                    help={help.basisMonate}
+                    lang={erklaerSprache}
+                  >
                     <NumberInput value={monateBasis} onChange={setMonateBasis} unit="Monate" min={1} max={14} />
                   </Field>
                 )}
                 {modell === "plus" && (
-                  <Field label="Monate ElterngeldPlus" hint="Max. 28 Monate — halb so viel, doppelt so lang">
+                  <Field
+                    label="Monate ElterngeldPlus"
+                    help={help.plusMonate}
+                    lang={erklaerSprache}
+                  >
                     <NumberInput value={monatePlus} onChange={setMonatePlus} unit="Monate" min={1} max={28} />
                   </Field>
                 )}
                 {modell === "mix" && (
                   <>
-                    <Field label="Basis-Monate">
+                    <Field label="Basis-Monate" help={help.basisMonate} lang={erklaerSprache}>
                       <NumberInput value={mixBasis} onChange={setMixBasis} unit="Monate" min={1} max={14} />
                     </Field>
-                    <Field label="ElterngeldPlus-Monate">
+                    <Field label="ElterngeldPlus-Monate" help={help.plusMonate} lang={erklaerSprache}>
                       <NumberInput value={mixPlus} onChange={setMixPlus} unit="Monate" min={1} max={28} />
                     </Field>
                   </>
                 )}
+                <Field label="Startmonat" help={help.startmonat} lang={erklaerSprache} id="input-startmonat">
+                  <input
+                    id="input-startmonat"
+                    type="month"
+                    value={startMonat}
+                    onChange={(e) => setStartMonat(e.target.value)}
+                    className={numberInputClass.replace("pr-16", "pr-4")}
+                  />
+                </Field>
                 <Field
                   label="Partnerschaftsbonus?"
-                  hint="+4 Bonus-Monate wenn beide 25–32 Std./Woche arbeiten"
+                  help={help.partnerschaftsbonus}
+                  lang={erklaerSprache}
                 >
                   <Toggle
                     options={[
@@ -764,7 +918,8 @@ export default function ElterngeldRechner() {
               <div className="bg-white rounded-2xl border border-sage/10 p-5">
                 <Field
                   label="Geschwisterbonus?"
-                  hint="Weiteres Kind unter 3 Jahren im Haushalt → +10% Elterngeld"
+                  help={help.geschwisterbonus}
+                  lang={erklaerSprache}
                 >
                   <Toggle
                     options={[
@@ -776,7 +931,7 @@ export default function ElterngeldRechner() {
                     ariaLabel="Geschwisterbonus"
                   />
                 </Field>
-                <Field label="Mehrlinge?" hint="Anzahl zusätzlicher Kinder bei Mehrlingsgeburt">
+                <Field label="Mehrlinge?" help={help.mehrlinge} lang={erklaerSprache}>
                   <Toggle
                     options={[
                       { label: "Kein", value: "0" },
@@ -909,6 +1064,25 @@ export default function ElterngeldRechner() {
                   )}
                 </div>
 
+                {ergebnis && (
+                  <div className="bg-white rounded-2xl border border-sage/10 overflow-hidden mb-3">
+                    <div className="px-5 py-2 bg-sage-light border-b border-sage/10">
+                      <p className="text-xs font-semibold text-sage uppercase tracking-wide">
+                        Monatsliste Auszahlung
+                      </p>
+                    </div>
+                    {auszahlungsMonate.map((monat) => (
+                      <div
+                        key={monat.lebensmonat}
+                        className="flex justify-between items-center px-5 py-2.5 border-b border-sage/10 last:border-0"
+                      >
+                        <span className="text-sm text-ink-mid">{monat.label}</span>
+                        <span className="text-sm font-semibold text-ink">{fmtMitCents(monat.betrag)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <p className="text-xs text-ink-light text-center leading-relaxed px-2">
                   Unverbindliche Schätzung nach §2 BEEG. Maßgeblich ist der Bescheid deiner
                   Elterngeldstelle. Lohnsteuer nach §32a EStG 2024 (Näherung für GKV-Versicherte).
@@ -934,10 +1108,96 @@ export default function ElterngeldRechner() {
                 planProbleme={planProbleme}
                 planBetrag={planBetrag}
                 ergebnis={ergebnis}
+                onSyncFromModel={syncPlanMitModell}
+                explainLang={erklaerSprache}
               />
             )}
           </div>
 
+        </div>
+      </div>
+
+      {/* Tab bar directly above result */}
+      <div className="shrink-0 px-4 pb-2 relative z-10">
+        <div className="max-w-lg mx-auto">
+          <div
+            role="tablist"
+            aria-label="Eingabebereiche"
+            className="flex gap-1 bg-white rounded-2xl p-1 border border-sage/10"
+          >
+            {TABS.map((tab, i) => (
+              <button
+                key={tab.id}
+                role="tab"
+                id={`tab-${tab.id}`}
+                aria-selected={activeTab === tab.id}
+                aria-controls={`panel-${tab.id}`}
+                tabIndex={activeTab === tab.id ? 0 : -1}
+                ref={(el) => { tabRefs.current[i] = el; }}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(e) => handleTabKeyDown(e, i)}
+                className={`flex-1 py-2 rounded-xl text-xs font-medium transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-sage focus-visible:ring-offset-1 ${
+                  activeTab === tab.id
+                    ? "bg-sage text-white shadow-sm"
+                    : "text-ink-mid hover:text-ink hover:bg-sage-light"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Ergebnis at bottom */}
+      <div className="shrink-0 px-4 pt-1 pb-3 relative z-10">
+        <div className="max-w-lg mx-auto">
+          {ergebnis ? (
+            <div className="bg-sage rounded-2xl px-5 py-4 relative overflow-hidden">
+              <div className="absolute -top-8 -right-8 w-36 h-36 rounded-full bg-white/5" />
+              <div className="absolute -bottom-12 -left-4 w-44 h-44 rounded-full bg-white/5" />
+              <div className="relative z-10">
+                <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-0.5">
+                  Elterngeld Rechner
+                </p>
+                <p className="text-xs font-semibold uppercase tracking-widest text-white/60 mb-0.5">
+                  {modell === "plus" ? "ElterngeldPlus / Monat" : "Basiselterngeld / Monat"}
+                </p>
+                <div className="flex items-baseline gap-3 mb-1">
+                  <p className="font-serif text-4xl text-white leading-none">
+                    {fmt(ergebnis.monatlichHaupt)}
+                  </p>
+                  {modell === "mix" && (
+                    <p className="text-sm text-white/60">
+                      Plus: {fmt(ergebnis.plusProMonat)} / Mo.
+                    </p>
+                  )}
+                </div>
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  {[
+                    { label: "Gesamt", val: fmt(ergebnis.gesamtBetrag) },
+                    { label: "Dauer", val: `${ergebnis.bezugsdauer} Mo.` },
+                    { label: "Ersatz", val: pct(ergebnis.ersatzrate) },
+                    { label: "Bonus", val: partnerschaftsbonus ? `+${ergebnis.bonusMonate} Mo.` : "–" },
+                  ].map((item) => (
+                    <div key={item.label} className="bg-white/10 rounded-xl p-2">
+                      <p className="text-[10px] text-white/55 mb-0.5">{item.label}</p>
+                      <p className="text-sm font-semibold text-white leading-tight">{item.val}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-sage/10 border border-sage/20 rounded-2xl px-5 py-4 text-center">
+              <p className="text-xs font-semibold uppercase tracking-wider text-sage mb-1">
+                Elterngeld Rechner
+              </p>
+              <p className="text-sm text-ink-mid">
+                Bitte Einkommen eingeben, um das Ergebnis zu sehen …
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -955,6 +1215,8 @@ interface PlanerPanelProps {
   planProbleme: PlanValidierungsProblem[];
   planBetrag: PlanBetragsSchaetzung | null;
   ergebnis: ErgebnisDetails | null;
+  onSyncFromModel: () => void;
+  explainLang: ErklaerSprache;
 }
 
 const PARENT_LABELS: Record<ParentId, string> = { A: "Elternteil A", B: "Elternteil B" };
@@ -969,6 +1231,8 @@ function PlanerPanel({
   planProbleme,
   planBetrag,
   ergebnis,
+  onSyncFromModel,
+  explainLang,
 }: PlanerPanelProps) {
 
   function toggleEintrag(monat: number, parent: ParentId, typ: BezugsTyp) {
@@ -1070,11 +1334,19 @@ function PlanerPanel({
         </div>
       )}
 
+      <button
+        type="button"
+        onClick={onSyncFromModel}
+        className="w-full py-2 rounded-xl text-sm font-medium border border-sage-mid text-ink-mid hover:border-sage hover:text-ink transition-all"
+      >
+        Mit Modell synchronisieren
+      </button>
+
       {planState.size > 0 && (
         <button
           type="button"
           onClick={() => dispatch({ type: "RESET" })}
-          className="w-full py-2 rounded-xl text-sm font-medium border border-sage-mid text-ink-mid hover:border-sage hover:text-ink transition-all"
+          className="w-full py-2 rounded-xl text-sm font-medium border border-sage/20 text-ink-light hover:border-sage hover:text-ink transition-all"
         >
           Plan zurücksetzen
         </button>
@@ -1085,6 +1357,9 @@ function PlanerPanel({
         <p className="text-xs font-semibold text-sage uppercase tracking-wide mb-3">
           Monatskalender (Lebensmonat 1–36)
         </p>
+        <div className="mb-3">
+          <HelpSheetButton label="Planer" help={help.planerKalender} lang={explainLang} />
+        </div>
         <div className="flex gap-3 mb-3 text-xs text-ink-mid flex-wrap">
           <span className="flex items-center gap-1.5">
             <span className="inline-block w-3 h-3 rounded-sm bg-sage" />
@@ -1178,9 +1453,12 @@ function PlanerPanel({
                           </div>
                           {eintrag?.typ === "plus" && (
                             <div>
-                              <p className="text-[10px] text-ink-light mb-1">
-                                Std./Woche (Partnerschaftsbonus)
-                              </p>
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <p className="text-[10px] text-ink-light">
+                                  Std./Woche (Partnerschaftsbonus)
+                                </p>
+                                <HelpSheetButton label="Std./Woche" help={help.plannerStunden} lang={explainLang} />
+                              </div>
                               <input
                                 type="number"
                                 value={eintrag.stundenProWoche ?? ""}
