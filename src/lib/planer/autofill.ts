@@ -119,21 +119,27 @@ export function baueAuszahlungsMonate(
   const monate = Array.from(plan.keys()).sort((a, b) => a - b);
 
   return monate
-    .map((lebensmonat) => {
+    .flatMap((lebensmonat) => {
       const eintragA = plan.get(lebensmonat)?.elternteilA ?? null;
       const eintragB = plan.get(lebensmonat)?.elternteilB ?? null;
-      const eintrag = eintragA ?? eintragB;
-      if (!eintrag) return null;
       const date = new Date(start.getFullYear(), start.getMonth() + lebensmonat - 1, 1);
-      const typ = eintrag.typ;
-      return {
-        lebensmonat,
-        label: `${MONATE_DE[date.getMonth()]} ${date.getFullYear()}`,
-        betrag: typ === "basis" ? basisBetrag : plusBetrag,
-        typ,
-        parent: eintragA ? "A" : "B",
-        bonus: !!eintrag.bonus,
-      };
+      const label = `${MONATE_DE[date.getMonth()]} ${date.getFullYear()}`;
+      return ([
+        { parent: "A", eintrag: eintragA },
+        { parent: "B", eintrag: eintragB },
+      ] as const)
+        .filter((item) => !!item.eintrag)
+        .map((item) => {
+          const typ = item.eintrag!.typ;
+          return {
+            lebensmonat,
+            label,
+            betrag: typ === "basis" ? basisBetrag : plusBetrag,
+            typ,
+            parent: item.parent,
+            bonus: !!item.eintrag?.bonus,
+          };
+        });
     })
     .filter((m): m is AuszahlungsMonat => !!m);
 }
